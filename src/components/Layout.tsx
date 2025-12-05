@@ -7,7 +7,7 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="layout">
-      <header className="app-header">
+      <header className="app-header" style={{ position: 'relative' }}>
         <div className="logo-container">
           <h1 className="logo-text">莲之空传统鉴赏部 AI 小说翻译器</h1>
         </div>
@@ -32,11 +32,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           justify-content: space-between;
           padding: 1.5rem 2rem;
           border-bottom: 1px solid var(--color-border);
-          backdrop-filter: blur(10px);
-          background: rgba(15, 23, 42, 0.8);
-          position: sticky;
-          top: 0;
-          z-index: 50;
+          position: static;
+          background: var(--color-bg-primary); /* Remove transparency if no longer overlay */
         }
         .logo-text {
           margin: 0;

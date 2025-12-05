@@ -36,6 +36,7 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('side-by-side');
   const [fontSize, setFontSize] = useState(18);
+  const [lineHeight, setLineHeight] = useState(1.8);
 
   /* Fullscreen styles */
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -102,6 +103,15 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
               <option value="mono">等宽</option>
               <option value="rounded">圆体</option>
             </select>
+            <select
+              value={lineHeight}
+              onChange={(e) => setLineHeight(Number(e.target.value))}
+              title="行高"
+            >
+              <option value={1.5}>紧凑</option>
+              <option value={1.8}>舒适</option>
+              <option value={2.2}>宽松</option>
+            </select>
           </div>
           <div className="control-group">
             <button onClick={() => setFontSize(s => Math.max(14, s - 2))}>A-</button>
@@ -118,7 +128,7 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
         </div>
       </div>
 
-      <div className={`content-area mode-${viewMode}`} style={{ fontSize: `${fontSize}px` }}>
+      <div className={`content-area mode-${viewMode}`} style={{ fontSize: `${fontSize}px`, lineHeight }}>
         {chunks.map((chunk) => {
           const translation = translations[chunk.id];
           return (
@@ -177,8 +187,7 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
         }
 
         .toolbar {
-          position: sticky;
-          top: 0;
+          position: relative; /* Was sticky */
           background: var(--color-bg-primary);
           border-bottom: 1px solid var(--color-border);
           padding: 1rem 0;
@@ -235,7 +244,7 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
 
         .paragraph-pair {
           margin-bottom: 2rem;
-          line-height: 1.8;
+          /* line-height handled by inline style now */
           font-family: var(--font-reading, var(--font-sans));
         }
 
