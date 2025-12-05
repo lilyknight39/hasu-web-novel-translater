@@ -9,7 +9,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     <div className="layout">
       <header className="app-header">
         <div className="logo-container">
-          <h1 className="logo-text">AI 小说翻译器</h1>
+          <h1 className="logo-text">莲之空传统鉴赏部 AI 小说翻译器</h1>
         </div>
         <nav>
           {/* Settings button, etc can go here */}
