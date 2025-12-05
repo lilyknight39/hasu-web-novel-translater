@@ -333,8 +333,8 @@ function App() {
         </div>
 
         <div className="hero-section">
-          <h2>AI Novel Translator</h2>
-          <p>Experience fluid, AI-assisted reading with Liquid Glass design.</p>
+          <h2>莲之空传统鉴赏部</h2>
+          <p>AI 翻译阅读器 beta 1.0</p>
         </div>
 
         <FileUploader onFileSelect={processFile} isLoading={isLoading} />
