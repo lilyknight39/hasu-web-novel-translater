@@ -14,7 +14,16 @@ function App() {
   const [model, setModel] = useState(() => localStorage.getItem('openai_model') || 'gpt-3.5-turbo');
   const [customPrompt, setCustomPrompt] = useState(() => localStorage.getItem('openai_custom_prompt') || '');
   const [debugMode, setDebugMode] = useState(() => localStorage.getItem('debug_mode') === 'true');
-  const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'light');
+  // Auto-detect theme preference
+  const getInitialTheme = () => {
+    const saved = localStorage.getItem('app_theme');
+    if (saved) return saved;
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+    return 'light';
+  };
+  const [theme, setTheme] = useState(getInitialTheme);
   const {
     novel,
     isLoading,
@@ -99,98 +108,105 @@ function App() {
     setShowSettings(false);
   };
 
-  const renderContent = () => {
-    if (showSettings) {
-      return (
-        <div className="settings-panel">
-          <h2>配置</h2>
-          <p>配置您的 AI 服务提供商设置。</p>
+  const renderSettingsModal = () => (
+    <div className="modal-overlay">
+      <div className="settings-panel glass-panel">
+        <h2>配置 AI 服务</h2>
+        <p className="settings-desc">配置您的 AI 服务提供商设置以开始翻译。</p>
 
-          <div className="input-group">
-            <label>API 密钥 (API Key)</label>
-            <input
-              type="password"
-              placeholder="sk-..."
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="api-input"
-            />
-          </div>
+        <div className="input-group">
+          <label>API 密钥 (API Key)</label>
+          <input
+            type="password"
+            placeholder="sk-..."
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            className="api-input"
+          />
+        </div>
 
-          <div className="input-group">
-            <label>API 地址 (Base URL)</label>
-            <input
-              type="text"
-              placeholder="https://api.openai.com/v1"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              className="api-input"
-            />
-          </div>
+        <div className="input-group">
+          <label>API 地址 (Base URL)</label>
+          <input
+            type="text"
+            placeholder="https://api.openai.com/v1"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            className="api-input"
+          />
+        </div>
 
-          <div className="input-group">
-            <label>模型名称 (Model Name)</label>
-            <input
-              type="text"
-              placeholder="gpt-3.5-turbo"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="api-input"
-            />
-          </div>
+        <div className="input-group">
+          <label>模型名称 (Model Name)</label>
+          <input
+            type="text"
+            placeholder="gpt-3.5-turbo"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            className="api-input"
+          />
+        </div>
 
-          <div className="input-group">
-            <label>自定义系统提示词 (可选)</label>
-            <textarea
-              placeholder="覆盖默认的系统提示词。使用 {{context}} 插入上下文..."
-              value={customPrompt}
-              onChange={(e) => setCustomPrompt(e.target.value)}
-              className="api-input"
-              rows={4}
-              style={{ resize: 'vertical', fontFamily: 'inherit' }}
-            />
-            <small style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.25rem', lineHeight: '1.4' }}>
-              <strong>提示：</strong>
-              <ul style={{ paddingLeft: '1.2rem', marginTop: '0.25rem' }}>
-                <li>此提示词将覆盖系统默认设置。</li>
-                <li>使用 <code>{`{{context}}`}</code> 插入上下文（前文内容等）。</li>
-                <li>批量翻译指令会自动追加以优化速度。</li>
-              </ul>
-            </small>
-          </div>
+        <div className="input-group">
+          <label>自定义系统提示词 (可选)</label>
+          <textarea
+            placeholder="覆盖默认的系统提示词。使用 {{context}} 插入上下文..."
+            value={customPrompt}
+            onChange={(e) => setCustomPrompt(e.target.value)}
+            className="api-input"
+            rows={4}
+            style={{ resize: 'vertical', fontFamily: 'inherit' }}
+          />
+          <small className="hint-text">
+            <strong>提示：</strong>
+            <ul>
+              <li>此提示词将覆盖系统默认设置。</li>
+              <li>使用 <code>{`{{context}}`}</code> 插入上下文（前文内容等）。</li>
+              <li>批量翻译指令会自动追加以优化速度。</li>
+            </ul>
+          </small>
+        </div>
 
-          <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <input
-              type="checkbox"
-              id="debugMode"
-              checked={debugMode}
-              onChange={(e) => setDebugMode(e.target.checked)}
-            />
-            <label htmlFor="debugMode" style={{ margin: 0 }}>启用调试模式</label>
-          </div>
+        <div className="input-group checkbox-group">
+          <input
+            type="checkbox"
+            id="debugMode"
+            checked={debugMode}
+            onChange={(e) => setDebugMode(e.target.checked)}
+          />
+          <label htmlFor="debugMode">启用调试模式</label>
+        </div>
 
+        <div className="modal-actions">
           <button
             className="btn-primary"
             onClick={handleSettingsSave}
             disabled={!apiKey.startsWith('sk-') && !apiKey}
           >
-            开始翻译
+            保存并继续
           </button>
-          {savedNovels.length > 0 && <button className="btn-link" onClick={() => setShowSettings(false)}>取消</button>}
+          {savedNovels.length > 0 && (
+            <button className="btn-link" onClick={() => setShowSettings(false)}>
+              暂不配置
+            </button>
+          )}
         </div>
-      );
-    }
+      </div>
+    </div>
+  );
 
+  const renderContent = () => {
     if (novel) {
+      // Reading View - No Global Header, just content and floating controls
       return (
         <div className={`novel-workspace theme-${theme}`}>
           {novel.status !== 'completed' && novel.status !== 'idle' && (
             <TranslationWorkspace
               progress={novel.progress}
-              currentStatus={novel.status === 'paused' ? '已暂停' : '翻译中...'}
+              currentStatus={novel.status === 'paused' ? 'Paused' : 'Translating...'}
               isPaused={novel.status === 'paused'}
               onPauseToggle={novel.status === 'paused' ? resumeTranslation : pauseTranslation}
-              onCancel={() => { /* TODO: Implement cancel fully */ pauseTranslation(); }}
+              onCancel={() => { pauseTranslation(); }}
               totalSegments={novel.chunks.length}
               completedSegments={Object.keys(novel.translations).length}
               logs={logs}
@@ -198,9 +214,82 @@ function App() {
           )}
 
           {novel.status === 'idle' && Object.keys(novel.translations).length < novel.chunks.length && (
-            <div className="start-banner">
-              <p>准备翻译 <strong>{novel.title}</strong></p>
-              <button className="btn-primary" onClick={startTranslation}>开始翻译</button>
+            <div className="title-page-container">
+              <div className="title-content">
+                <h1 className="book-title">{novel.title}</h1>
+                <p className="book-subtitle">莲之空传统鉴赏部</p>
+                <div className="action-area">
+                  <button className="btn-liquid-cta" onClick={startTranslation}>开始翻译</button>
+                </div>
+              </div>
+
+              <style>{`
+                  .title-page-container {
+                      display: flex;
+                      flex-direction: column;
+                      align-items: center;
+                      justify-content: center;
+                      min-height: 60vh; /* Centered visually in the upper portion */
+                      text-align: center;
+                      padding: 2rem;
+                      animation: fadeIn 0.8s ease-out;
+                  }
+                  
+                  @keyframes fadeIn {
+                      from { opacity: 0; transform: translateY(20px); }
+                      to { opacity: 1; transform: translateY(0); }
+                  }
+
+                  .book-title {
+                      font-family: var(--font-serif);
+                      font-size: 3.5rem;
+                      font-weight: 700;
+                      color: var(--color-text-primary);
+                      margin: 0 0 1rem 0;
+                      line-height: 1.2;
+                      letter-spacing: -0.02em;
+                  }
+                  
+                  .book-subtitle {
+                      font-family: var(--font-serif);
+                      font-style: italic;
+                      font-size: 1.25rem;
+                      color: var(--color-text-secondary);
+                      margin: 0 0 4rem 0; /* Generous whitespace before action */
+                      font-weight: 400;
+                  }
+                  
+                  /* Liquid CTA Button */
+                  .btn-liquid-cta {
+                      background: var(--color-text-primary); /* High contrast, like ink */
+                      border: none;
+                      padding: 1rem 3.5rem;
+                      font-size: 1.1rem;
+                      font-weight: 600;
+                      color: var(--color-bg-primary); /* Inverted text */
+                      border-radius: 999px;
+                      cursor: pointer;
+                      position: relative;
+                      overflow: hidden;
+                      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+                      box-shadow: 0 20px 40px -10px rgba(0,0,0,0.3);
+                  }
+                  
+                  [data-theme='dark'] .btn-liquid-cta {
+                      background: var(--color-accent-primary); /* Blue accent for dark mode */
+                      color: white;
+                      box-shadow: 0 4px 12px rgba(0, 122, 255, 0.4); /* Refined blue shadow */
+                  }
+
+                  .btn-liquid-cta:hover {
+                      transform: scale(1.05) translateY(-2px);
+                      box-shadow: 0 30px 60px -12px rgba(0,0,0,0.4);
+                  }
+                  
+                  .btn-liquid-cta:active {
+                      transform: scale(0.98);
+                  }
+                `}</style>
             </div>
           )}
 
@@ -214,41 +303,94 @@ function App() {
             currentFont={fontFamily}
             onFontChange={setFontFamily}
             onRetry={retrySegment}
+            onBack={() => {
+              if (confirm('返回主页？')) {
+                window.location.reload();
+              }
+            }}
           />
         </div>
       );
     }
 
+    // Home View - With Header
     return (
       <div className="home-view">
+        {/* Simple Header for Home */}
+        <div style={{
+          position: 'absolute',
+          top: '1rem',
+          right: '1rem',
+          zIndex: 10
+        }}>
+          <button
+            className="btn-icon-subtle"
+            onClick={() => setShowSettings(true)}
+            title="Settings"
+          >
+            ⚙️
+          </button>
+        </div>
+
+        <div className="hero-section">
+          <h2>AI Novel Translator</h2>
+          <p>Experience fluid, AI-assisted reading with Liquid Glass design.</p>
+        </div>
+
         <FileUploader onFileSelect={processFile} isLoading={isLoading} />
 
         {savedNovels.length > 0 && (
           <div className="saved-novels">
-            <h3>继续阅读</h3>
-            <div className="grid">
+            <h3>Continue Reading</h3>
+            <div className="saved-list">
               {savedNovels.map(n => (
-                <div key={n.id} className="novel-card" onClick={() => loadNovel(n.id)}>
-                  <h4>{n.title}</h4>
+                <div key={n.id} className="novel-list-item">
+                  <div className="novel-info" onClick={() => loadNovel(n.id)}>
+                    <div className="list-icon">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                      </svg>
+                    </div>
+                    <h4>{n.title}</h4>
+                  </div>
+                  <button
+                    className="delete-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`确定要删除 "${n.title}" 吗？\n\n这将删除小说和所有翻译内容。`)) {
+                        storage.deleteNovel(n.id).then(() => {
+                          storage.getNovels().then(novels => {
+                            setSavedNovels(novels.map(novel => ({ id: novel.id, title: novel.title })));
+                          });
+                        });
+                      }
+                    }}
+                    title="删除"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 6h18"></path>
+                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                    </svg>
+                  </button>
                 </div>
               ))}
             </div>
           </div>
         )}
-
-        <div className="settings-trigger">
-          <button className="btn-small" onClick={() => setShowSettings(true)}>API 设置</button>
-        </div>
       </div>
     );
   };
 
   return (
-    <Layout>
+    // Removed Layout wrapper to control Headers manually per view
+    <div className="app-container">
       {error && <div className="error-banner">{error}</div>}
       {renderContent()}
-    </Layout>
+      {showSettings && renderSettingsModal()}
+    </div>
   );
-}
+};
 
 export default App;

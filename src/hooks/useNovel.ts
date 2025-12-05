@@ -110,14 +110,17 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         addLog("翻译已开始。");
     }, [novel, apiKey, addLog]);
 
-    // Actually, let's implement the Translation Loop in a simpler way:
-    // We expose a function `translateNextBatch` that translates the next X chunks.
-    // And an Effect that calls it if status is 'translating'.
+    // Translation Loop Logic
+    // STRICT SEQUENTIAL PRIORITY:
+    // We only fetch batch N if batch N-1 is done or we are at start.
+    // Actually, allowing some concurrency is fine, but we should prioritize lower indices.
+    // The current logic picks the FIRST untranslated chunk. This is correct for sequentiality.
+    // However, if we have holes (retry), it fills holes.
+    // We need to ensure we don't start too many "future" batches if technical limit is hit.
 
-    // Concurrency & Batch Settings
-    const MAX_CONCURRENT_REQUESTS = 5;
+    const MAX_CONCURRENT_REQUESTS = 3; // Reduced for stability
     const MAX_BATCH_SIZE = 4;
-    const MAX_BATCH_CHARS = 1200;
+    const MAX_BATCH_CHARS = 1500;
 
     const pendingChunkIds = React.useRef<Set<string>>(new Set());
     const activeRequests = React.useRef(0);
@@ -132,46 +135,49 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         let cancel = false;
 
         const loop = async () => {
+            // If we are not translating, or paused, stop.
             if (!novel || novel.status !== 'translating' || isPaused || cancel) return;
 
-            // While we have capacity...
+            // Simple loop to fill slots
             while (activeRequests.current < MAX_CONCURRENT_REQUESTS) {
-                // Find next candidates: untranslated AND not pending
-                // We need to look through the whole list to find the first availables
-                const untranslatedAndFree = novel.chunks.filter(c => !novel.translations[c.id] && !pendingChunkIds.current.has(c.id));
+                // 1. Identify candidates
+                // We want the EARLIEST untranslated chunk that is NOT pending.
+                const allChunks = novel.chunks;
+                let startChunk = null;
 
-                if (untranslatedAndFree.length === 0) {
-                    // Check completion
+                for (const chunk of allChunks) {
+                    if (!novel.translations[chunk.id] && !pendingChunkIds.current.has(chunk.id)) {
+                        startChunk = chunk;
+                        break; // Found the earliest one
+                    }
+                }
+
+                if (!startChunk) {
+                    // No work found. Check if done.
                     if (activeRequests.current === 0) {
-                        // Double check integrity
                         const trulyDone = novel.chunks.every(c => novel.translations[c.id]);
                         if (trulyDone) {
                             setNovel(prev => prev ? { ...prev, status: 'completed', progress: 100 } : null);
-                            addLog("翻译完成！");
+                            addLog("Translation Completed!");
                         }
                     }
-                    break; // No work to do
+                    break;
                 }
 
-                // Build a contiguous batch starting from the first candidate
-                const startChunk = untranslatedAndFree[0];
+                // 2. Build Batch
                 const batch = [startChunk];
                 let currentChars = startChunk.text.length;
-
-                // Look for subsequent chunks
-                // We use the original index to ensure contiguity
                 let nextIndex = startChunk.index + 1;
-                while (batch.length < MAX_BATCH_SIZE) {
-                    // Find chunk with index == nextIndex
-                    // Optimization: since chunks are sorted, we can look at array, but filtering disrupted indices.
-                    // Let's just lookup in novel.chunks
-                    if (nextIndex >= novel.chunks.length) break;
 
+                while (batch.length < MAX_BATCH_SIZE) {
+                    if (nextIndex >= novel.chunks.length) break;
                     const nextOne = novel.chunks[nextIndex];
-                    // Must be untranslated and not pending
+
+                    // Optimization: Only batch CONTINUOUS segments.
+                    // If nextOne is already translated or pending, we stop the batch here.
+                    // This ensures we strictly fill gaps.
                     if (novel.translations[nextOne.id] || pendingChunkIds.current.has(nextOne.id)) break;
 
-                    // Check char limit
                     if (currentChars + nextOne.text.length > MAX_BATCH_CHARS) break;
 
                     batch.push(nextOne);
@@ -179,13 +185,12 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
                     nextIndex++;
                 }
 
-                // Mark pending
+                // 3. Execute
                 batch.forEach(c => pendingChunkIds.current.add(c.id));
                 activeRequests.current++;
 
-                addLog(`开始批次：切片 ${batch[0].index + 1}-${batch[batch.length - 1].index + 1} (${batch.length} 个切片，${currentChars} 字符)`);
+                addLog(`Translating Batch: Segments ${batch[0].index + 1}-${batch[batch.length - 1].index + 1} (${batch.length} chunks)`);
 
-                // Detached processing
                 aiService.translateBatch(
                     batch.map(c => c.text),
                     {
@@ -196,14 +201,6 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
                 ).then(translations => {
                     if (cancel) return;
 
-                    if (translations.length !== batch.length) {
-                        addLog(`批次警告：发送了 ${batch.length} 个切片，收到了 ${translations.length} 个。映射可能不准确。`);
-                    }
-
-                    // Save and Update
-                    // We must map results to chunks 1:1. If length mismatch, we only save what we got?
-                    // Or we fail the batch?
-                    // Let's save what matches index.
                     const updates: Record<string, string> = {};
                     batch.forEach((c, i) => {
                         if (translations[i]) {
@@ -215,7 +212,6 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
                     setNovel(prev => {
                         if (!prev) return null;
                         const newTrans = { ...prev.translations, ...updates };
-                        // Trigger next loop via effect dependency
                         return {
                             ...prev,
                             translations: newTrans,
@@ -223,32 +219,36 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
                         };
                     });
 
-                    addLog(`批次已保存 (${Object.keys(updates).length} 个切片)。`);
-
                 }).catch(err => {
                     console.error("Batch failed", err);
-                    addLog(`批次失败：${err}`);
+                    addLog(`Batch failed: Segments ${batch[0].index + 1}-${batch[batch.length - 1].index + 1}. Error: ${err}`);
+                    // We do NOT mark them as done. They remain untranslated.
+                    // The loop will pick them up again? 
+                    // To prevent infinite fast loops on permanent error, we might want to pause?
+                    // For now, let's just let the pending clear and it will retry in next loop tick.
                 }).finally(() => {
                     if (!cancel) {
                         batch.forEach(c => pendingChunkIds.current.delete(c.id));
                         activeRequests.current--;
-                        // Force re-loop if we didn't update state (e.g. error)
-                        // But if we updated state, it triggers loop.
-                        // If error, state doesn't update, so loop won't trigger automatically?
-                        // We might need a 'tick' state or just rely on 'novel' reference not changing but...
-                        // Actually, if we setNovel even on error (status change?), it loops.
-                        // Let's rely on user pausing/resuming if it gets stuck? 
-                        // No, we should retry.
-                        // Simple fix: setNovel with same state to trigger effect? No, React bails out.
-                        // Let's set a 'tick'
+                        // We rely on React state update (setNovel or logs?) to trigger re-render? 
+                        // Actually, if we just updated a Ref, it won't re-render.
+                        // setNovel triggers re-render.
+                        // If we failed, strict catch doesn't setNovel.
+                        // BUT, activeRequests changed. 
+                        // Check dependencies: is activeRequests.current in dep? No, it's a ref.
+                        // We need to trigger the effect again.
+                        // Hack: toggle a tick state? Or just setNovel(prev => ({...prev})) even on error?
+                        // Let's setNovel to force re-evaluation.
+                        setNovel(prev => prev ? { ...prev } : null);
                     }
                 });
             }
         };
 
-        loop();
+        const timer = setInterval(loop, 1000); // Polling backup + initial trigger
+        loop(); // Immediate trigger
 
-        return () => { cancel = true; };
+        return () => { cancel = true; clearInterval(timer); };
     }, [novel?.status, novel?.translations, isPaused, novel?.id, addLog, novel?.chunks, novel?.title]);
     // Dependency on translations causes it to re-run after each success! Perfect loop.
 
