@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import './App.css';
-import { Layout } from './components/Layout';
 import { FileUploader } from './components/FileUploader';
 import { ReadingView } from './components/ReadingView';
 import { TranslationWorkspace } from './components/TranslationWorkspace';

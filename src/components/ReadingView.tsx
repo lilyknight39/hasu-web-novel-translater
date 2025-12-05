@@ -27,7 +27,7 @@ interface ReadingViewProps {
 export const ReadingView: React.FC<ReadingViewProps> = ({
   chunks,
   translations,
-  title,
+  title: _title,
   onExport,
   currentTheme = 'light',
   onThemeChange,
