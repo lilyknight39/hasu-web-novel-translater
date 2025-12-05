@@ -55,6 +55,22 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           width: 100%;
           padding: 2rem;
         }
+        
+        @media (max-width: 768px) {
+          .app-header {
+            padding: 1rem;
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          
+          .logo-text {
+            font-size: 1.25rem;
+          }
+
+          .app-content {
+            padding: 1rem;
+          }
+        }
       `}</style>
     </div>
   );

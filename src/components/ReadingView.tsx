@@ -35,8 +35,31 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>('side-by-side');
   const [fontSize, setFontSize] = useState(18);
 
+  /* Fullscreen styles */
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen();
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  React.useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
   return (
-    <div className="reading-view">
+    <div className="reading-view" ref={containerRef}>
       <div className="toolbar">
         <h2 className="novel-title">{title}</h2>
         <div className="controls">
@@ -47,6 +70,15 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
               </button>
             </div>
           )}
+          <div className="control-group">
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "退出全屏" : "全屏模式"}
+              className={isFullscreen ? "active" : ""}
+            >
+              {isFullscreen ? "退出全屏" : "全屏"}
+            </button>
+          </div>
           <div className="control-group">
             <select
               value={currentTheme}
@@ -116,6 +148,20 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
           display: flex;
           flex-direction: column;
         }
+        
+        /* Fullscreen overrides */
+        .reading-view:fullscreen {
+           background: var(--color-bg-primary);
+           overflow-y: auto;
+           padding: 0 2rem; /* Restore page padding in fullscreen */
+        }
+        
+        .reading-view:fullscreen .toolbar {
+            /* Ensure toolbar stays pinned inside fullscreen container */
+            position: sticky; 
+            top: 0;
+            z-index: 100;
+        }
 
         .toolbar {
           position: sticky;
@@ -128,17 +174,24 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
           justify-content: space-between;
           align-items: center;
           z-index: 10;
+          flex-wrap: wrap;
+          gap: 1rem;
         }
 
         .novel-title {
           margin: 0;
           font-family: var(--font-serif);
           font-size: 1.5rem;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .controls {
           display: flex;
           gap: 1rem;
+          flex-wrap: wrap;
+          align-items: center;
         }
 
         .control-group {
@@ -154,6 +207,13 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
           padding: 0.5rem 1rem;
           border-radius: var(--radius-md);
           font-size: 0.875rem;
+          cursor: pointer;
+        }
+        
+        button.active {
+            background: var(--color-accent-primary);
+            color: white;
+            border-color: var(--color-accent-primary);
         }
 
         .content-area {
@@ -228,6 +288,30 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
         }
 
         @media (max-width: 768px) {
+          .toolbar {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .novel-title {
+            width: 100%;
+            font-size: 1.25rem;
+          }
+          
+          .controls {
+            width: 100%;
+            overflow-x: auto;
+            padding-bottom: 0.5rem;
+            /* Hide scrollbar for cleaner look */
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+          }
+          
+          .controls::-webkit-scrollbar {
+            display: none;
+          }
+
           .mode-side-by-side .paragraph-pair {
             grid-template-columns: 1fr;
             gap: 1rem;
@@ -236,6 +320,18 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
             border-right: none;
             padding-right: 0;
             margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px dashed var(--color-border);
+          }
+          
+          .control-group button, .control-group select {
+             padding: 0.4rem 0.6rem; 
+             font-size: 0.8rem;
+          }
+          
+          /* Adjust fullscreen padding for mobile */
+          .reading-view:fullscreen {
+             padding: 0 1rem;
           }
         }
       `}</style>
