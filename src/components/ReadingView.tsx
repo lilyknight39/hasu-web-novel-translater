@@ -20,6 +20,7 @@ interface ReadingViewProps {
   onThemeChange?: (theme: string) => void;
   onFontChange?: (font: string) => void;
   currentFont?: string;
+  onRetry?: (chunkId: string) => void;
 }
 
 export const ReadingView: React.FC<ReadingViewProps> = ({
@@ -30,7 +31,8 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
   currentTheme = 'light',
   onThemeChange,
   currentFont = 'sans',
-  onFontChange
+  onFontChange,
+  onRetry
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('side-by-side');
   const [fontSize, setFontSize] = useState(18);
@@ -132,7 +134,18 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
                   {translation ? (
                     <ReactMarkdown>{translation}</ReactMarkdown>
                   ) : (
-                    <p className="placeholder">翻译中...</p>
+                    <div className="translation-placeholder">
+                      <p className="placeholder-text">翻译中...</p>
+                      {onRetry && (
+                        <button
+                          className="retry-btn"
+                          onClick={() => onRetry(chunk.id)}
+                          title="重试翻译"
+                        >
+                          ↺ 重试
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -297,6 +310,35 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
           .novel-title {
             width: 100%;
             font-size: 1.25rem;
+          }
+
+          .translation-placeholder {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            color: var(--color-text-muted);
+            font-style: italic;
+            opacity: 0.8;
+          }
+          
+          .placeholder-text {
+            margin: 0;
+          }
+
+          .retry-btn {
+            background: transparent;
+            border: 1px solid var(--color-border);
+            padding: 0.2rem 0.6rem;
+            font-size: 0.75rem;
+            opacity: 0.7;
+            transition: all 0.2s;
+          }
+          
+          .retry-btn:hover {
+            opacity: 1;
+            background: var(--color-bg-secondary);
+            border-color: var(--color-accent-primary);
+            color: var(--color-accent-primary);
           }
           
           .controls {

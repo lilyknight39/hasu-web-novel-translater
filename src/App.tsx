@@ -25,7 +25,8 @@ function App() {
     startTranslation,
     pauseTranslation,
     resumeTranslation,
-    exportNovel
+    exportNovel,
+    retrySegment
   } = useNovel(apiKey, baseUrl, debugMode, model, customPrompt);
 
   // Persist theme & font
@@ -212,6 +213,7 @@ function App() {
             onThemeChange={setTheme}
             currentFont={fontFamily}
             onFontChange={setFontFamily}
+            onRetry={retrySegment}
           />
         </div>
       );

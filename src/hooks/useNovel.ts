@@ -285,6 +285,45 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         addLog(`已导出小说为 .${format}`);
     }, [novel, addLog]);
 
+    const retrySegment = useCallback(async (chunkId: string) => {
+        if (!novel || !apiKey) return;
+
+        const chunk = novel.chunks.find(c => c.id === chunkId);
+        if (!chunk) return;
+
+        addLog(`正在重试翻译切片 ${chunk.index + 1}...`);
+
+        try {
+            // Optimistic update or just wait? Let's just fire and forget, 
+            // but we might want to show loading state for this specific chunk if we had per-chunk status.
+            // For now, the UI just shows "Translating..." if missing.
+
+            const translation = await aiService.translateChunk(chunk.text, {
+                previousParagraph: chunk.index > 0 ? novel.chunks[chunk.index - 1].text : undefined,
+                nextParagraph: chunk.index < novel.chunks.length - 1 ? novel.chunks[chunk.index + 1].text : undefined,
+                globalContext: `Title: ${novel.title}`
+            });
+
+            if (translation) {
+                storage.saveTranslation(novel.id, chunk.id, translation);
+                setNovel(prev => {
+                    if (!prev) return null;
+                    return {
+                        ...prev,
+                        translations: {
+                            ...prev.translations,
+                            [chunk.id]: translation
+                        }
+                    };
+                });
+                addLog(`切片 ${chunk.index + 1} 重试成功。`);
+            }
+        } catch (e) {
+            console.error("Retry failed", e);
+            addLog(`切片 ${chunk.index + 1} 重试失败：${e}`);
+        }
+    }, [novel, apiKey, addLog]);
+
     return {
         novel,
         isLoading,
@@ -296,6 +335,7 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         pauseTranslation: () => { setIsPaused(true); setNovel(prev => prev ? { ...prev, status: 'paused' } : null); addLog("已暂停。"); },
         resumeTranslation: () => { setIsPaused(false); setNovel(prev => prev ? { ...prev, status: 'translating' } : null); addLog("正在恢复..."); },
         stopTranslation: () => setNovel(prev => prev ? { ...prev, status: 'idle' } : null),
-        exportNovel
+        exportNovel,
+        retrySegment
     };
 };
