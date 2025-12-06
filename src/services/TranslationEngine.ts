@@ -167,9 +167,11 @@ export class TranslationEngine {
         this.completedIds.delete(chunkId);
         this.pendingIds.delete(chunkId);
 
-        const info = this.paragraphMap.get(chunkId);
-        if (info) {
-            this.addToQueue(chunkId, info.chunkIndex, 'high');
+        // Find chunk in allChunks - don't rely on paragraphMap
+        const chunk = this.allChunks.find(c => c.id === chunkId);
+        if (chunk) {
+            this.addToQueueDirect(chunkId, chunk.index, chunk.text, 'high');
+            this.processQueue();  // Immediately process for retry
         }
     }
 
@@ -214,18 +216,20 @@ export class TranslationEngine {
         this.setStatus('translating');
         this.log('翻译已开始，等待段落进入视口...');
 
+        // Debug: Log paragraphMap state to help diagnose timing issues
+        this.log(`当前已注册段落数：${this.paragraphMap.size}`);
+
         // Auto-enqueue first N paragraphs for immediate translation
+        // Use allChunks directly - don't require paragraphMap to be populated
         const firstN = this.config.translateFirstN;
         let enqueued = 0;
         for (const chunk of this.allChunks) {
             if (enqueued >= firstN) break;
             if (this.completedIds.has(chunk.id)) continue;
 
-            const info = this.paragraphMap.get(chunk.id);
-            if (info) {
-                this.addToQueue(chunk.id, chunk.index, 'normal');
-                enqueued++;
-            }
+            // Directly enqueue using chunk data - don't require paragraphMap lookup
+            this.addToQueueDirect(chunk.id, chunk.index, chunk.text, 'normal');
+            enqueued++;
         }
 
         if (enqueued > 0) {
@@ -318,6 +322,56 @@ export class TranslationEngine {
             this.queue.unshift(item);
         } else {
             // Sort by index for sequential reading experience
+            const insertIdx = this.queue.findIndex(
+                q => q.priority === 'normal' && q.chunkIndex > chunkIndex
+            );
+            if (insertIdx === -1) {
+                this.queue.push(item);
+            } else {
+                this.queue.splice(insertIdx, 0, item);
+            }
+        }
+
+        if (!this.isPaused && this.status !== 'translating') {
+            this.setStatus('translating');
+        }
+    }
+
+    /**
+     * Add chunk to queue directly using chunk data - doesn't require paragraphMap lookup.
+     * This fixes timing issues where start() is called before React finishes rendering.
+     */
+    private addToQueueDirect(
+        chunkId: string,
+        chunkIndex: number,
+        text: string,
+        priority: 'high' | 'normal'
+    ): void {
+        // Skip duplicates
+        if (this.queue.some(item => item.chunkId === chunkId)) return;
+        if (this.pendingIds.has(chunkId)) return;
+
+        // Ensure paragraphMap has the chunk info (for translateBatch lookup)
+        if (!this.paragraphMap.has(chunkId)) {
+            // Create synthetic entry - element may not exist yet
+            this.paragraphMap.set(chunkId, {
+                chunkId,
+                chunkIndex,
+                element: null as unknown as HTMLElement,
+                text,
+            });
+        }
+
+        const item: QueueItem = {
+            chunkId,
+            chunkIndex,
+            priority,
+            addedAt: Date.now(),
+        };
+
+        if (priority === 'high') {
+            this.queue.unshift(item);
+        } else {
             const insertIdx = this.queue.findIndex(
                 q => q.priority === 'normal' && q.chunkIndex > chunkIndex
             );
