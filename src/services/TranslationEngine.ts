@@ -416,6 +416,9 @@ export class TranslationEngine {
         text: string,
         priority: 'high' | 'normal'
     ): void {
+        // Skip if already completed (prevents re-translating cached paragraphs)
+        if (this.completedIds.has(chunkId)) return;
+
         // Skip duplicates
         if (this.queue.some(item => item.chunkId === chunkId)) return;
         if (this.pendingIds.has(chunkId)) return;

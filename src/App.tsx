@@ -220,8 +220,13 @@ function App() {
               <div className="title-content">
                 <h1 className="book-title">{novel.title}</h1>
                 <p className="book-subtitle">莲之空传统鉴赏部机械桑翻译</p>
+                {Object.keys(novel.translations).length > 0 && (
+                  <p className="resume-hint">已翻译 {Object.keys(novel.translations).length} / {novel.chunks.length} 段</p>
+                )}
                 <div className="action-area">
-                  <button className="btn-liquid-cta" onClick={startTranslation}>开始翻译</button>
+                  <button className="btn-liquid-cta" onClick={startTranslation}>
+                    {Object.keys(novel.translations).length > 0 ? '继续翻译' : '开始翻译'}
+                  </button>
                 </div>
               </div>
 
@@ -256,8 +261,15 @@ function App() {
                       font-family: var(--font-serif);
                       font-size: 1.25rem;
                       color: var(--color-text-secondary);
-                      margin: 0 0 4rem 0; /* Generous whitespace before action */
+                      margin: 0 0 2rem 0;
                       font-weight: 400;
+                  }
+                  
+                  .resume-hint {
+                      font-size: 0.9rem;
+                      color: var(--color-text-muted);
+                      margin: 0 0 2rem 0;
+                      font-variant-numeric: tabular-nums;
                   }
                   
                   /* Liquid CTA Button */
@@ -339,7 +351,7 @@ function App() {
 
         <div className="hero-section">
           <h2>莲之空传统鉴赏部</h2>
-          <p>AI 翻译阅读器 beta 1.8</p>
+          <p>AI 翻译阅读器 beta 1.9</p>
         </div>
 
         <FileUploader onFileSelect={processFile} isLoading={isLoading} />
