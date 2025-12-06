@@ -271,8 +271,35 @@ export class TranslationEngine {
             this.log(`已自动将 ${enqueued} 个段落加入队列`);
         }
 
+        // CRITICAL: Scan DOM directly for paragraph elements and observe them
+        // This bypasses React's useEffect timing issue in production
+        this.scanAndObserveParagraphs();
+
         // Immediately trigger queue processing
         this.processQueue();
+    }
+
+    /**
+     * Scan DOM for paragraph elements and observe them with IntersectionObserver
+     * This ensures viewport detection works even if React's observe() hasn't been called
+     */
+    private scanAndObserveParagraphs(): void {
+        if (!this.paragraphObserver) return;
+
+        // Find all paragraph elements in the DOM
+        const paragraphs = document.querySelectorAll('[data-chunk-id]');
+        this.log(`DOM 扫描发现 ${paragraphs.length} 个段落元素`);
+
+        paragraphs.forEach((element) => {
+            const chunkId = element.getAttribute('data-chunk-id');
+            if (!chunkId) return;
+
+            // Skip if already completed
+            if (this.completedIds.has(chunkId)) return;
+
+            // Observe this element
+            this.paragraphObserver?.observe(element);
+        });
     }
 
     /**
