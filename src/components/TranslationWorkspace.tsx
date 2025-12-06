@@ -56,7 +56,7 @@ export const TranslationWorkspace: React.FC<TranslationWorkspaceProps> = ({
           {isPaused ? '▶ 继续翻译' : '⏸ 暂停'}
         </button>
         <button className="btn-secondary" onClick={onCancel}>
-          取消任务
+          取消
         </button>
       </div>
 

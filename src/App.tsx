@@ -219,7 +219,7 @@ function App() {
             <div className="title-page-container">
               <div className="title-content">
                 <h1 className="book-title">{novel.title}</h1>
-                <p className="book-subtitle">莲之空传统鉴赏部</p>
+                <p className="book-subtitle">莲之空传统鉴赏部机械桑翻译</p>
                 <div className="action-area">
                   <button className="btn-liquid-cta" onClick={startTranslation}>开始翻译</button>
                 </div>
@@ -244,7 +244,7 @@ function App() {
 
                   .book-title {
                       font-family: var(--font-serif);
-                      font-size: 3.5rem;
+                      font-size: 2.5rem;
                       font-weight: 700;
                       color: var(--color-text-primary);
                       margin: 0 0 1rem 0;
@@ -254,7 +254,6 @@ function App() {
                   
                   .book-subtitle {
                       font-family: var(--font-serif);
-                      font-style: italic;
                       font-size: 1.25rem;
                       color: var(--color-text-secondary);
                       margin: 0 0 4rem 0; /* Generous whitespace before action */
@@ -340,7 +339,7 @@ function App() {
 
         <div className="hero-section">
           <h2>莲之空传统鉴赏部</h2>
-          <p>AI 翻译阅读器 beta 1.4</p>
+          <p>AI 翻译阅读器 beta 1.5</p>
         </div>
 
         <FileUploader onFileSelect={processFile} isLoading={isLoading} />
