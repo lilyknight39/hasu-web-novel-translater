@@ -34,7 +34,9 @@ function App() {
     pauseTranslation,
     resumeTranslation,
     exportNovel,
-    retrySegment
+    retrySegment,
+    observeParagraph,
+    unobserveParagraph
   } = useNovel(apiKey, baseUrl, debugMode, model, customPrompt);
 
   // Persist theme & font
@@ -302,6 +304,8 @@ function App() {
             currentFont={fontFamily}
             onFontChange={setFontFamily}
             onRetry={retrySegment}
+            onObserveParagraph={observeParagraph}
+            onUnobserveParagraph={unobserveParagraph}
             onBack={() => {
               if (confirm('返回主页？')) {
                 window.location.reload();

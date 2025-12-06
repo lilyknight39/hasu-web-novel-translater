@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { TextChunk } from '../services/chunker';
 
 interface ReadingViewProps {
@@ -22,7 +22,64 @@ interface ReadingViewProps {
   currentFont?: string;
   onRetry?: (chunkId: string) => void;
   onBack?: () => void;
+  onObserveParagraph?: (element: HTMLElement, chunkId: string, chunkIndex: number, text: string) => void;
+  onUnobserveParagraph?: (element: HTMLElement) => void;
 }
+
+// ParagraphItem component handles observation lifecycle
+const ParagraphItem: React.FC<{
+  chunk: TextChunk;
+  translation?: string;
+  viewMode: ViewMode;
+  onRetry?: (chunkId: string) => void;
+  onObserve?: (element: HTMLElement, chunkId: string, chunkIndex: number, text: string) => void;
+  onUnobserve?: (element: HTMLElement) => void;
+}> = ({ chunk, translation, viewMode, onRetry, onObserve, onUnobserve }) => {
+  const paragraphRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const element = paragraphRef.current;
+    if (element && onObserve) {
+      onObserve(element, chunk.id, chunk.index, chunk.text);
+    }
+    return () => {
+      if (element && onUnobserve) {
+        onUnobserve(element);
+      }
+    };
+  }, [chunk.id, chunk.index, chunk.text, onObserve, onUnobserve]);
+
+  return (
+    <div ref={paragraphRef} className="paragraph-pair" data-chunk-id={chunk.id}>
+      {(viewMode === 'side-by-side' || viewMode === 'interleaved' || viewMode === 'original-only') && (
+        <div className="original-text markdown-body">
+          <ReactMarkdown>{chunk.text}</ReactMarkdown>
+        </div>
+      )}
+
+      {(viewMode === 'side-by-side' || viewMode === 'interleaved' || viewMode === 'translation-only') && (
+        <div className="translated-text markdown-body">
+          {translation ? (
+            <ReactMarkdown>{translation}</ReactMarkdown>
+          ) : (
+            <div className="translation-placeholder">
+              <span className="scramble-loader">Translating...</span>
+              {onRetry && (
+                <button
+                  className="retry-btn"
+                  onClick={() => onRetry(chunk.id)}
+                  title="重试"
+                >
+                  ↺
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const ReadingView: React.FC<ReadingViewProps> = ({
   chunks,
@@ -34,7 +91,9 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
   currentFont = 'sans',
   onFontChange,
   onRetry,
-  onBack
+  onBack,
+  onObserveParagraph,
+  onUnobserveParagraph
 }) => {
   /* State for Appearance Popover & Collapse */
   const [showAppearance, setShowAppearance] = useState(false);
@@ -86,39 +145,17 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
 
       {/* Content Area */}
       <div className={`content-area mode-${viewMode}`} style={{ fontSize: `${fontSize}px`, lineHeight: 1.7, '--paragraph-spacing': `${paragraphSpacing}rem` } as React.CSSProperties & { '--paragraph-spacing': string }}>
-        {chunks.map((chunk) => {
-          const translation = translations[chunk.id];
-          return (
-            <div key={chunk.id} className="paragraph-pair">
-              {(viewMode === 'side-by-side' || viewMode === 'interleaved' || viewMode === 'original-only') && (
-                <div className="original-text markdown-body">
-                  <ReactMarkdown>{chunk.text}</ReactMarkdown>
-                </div>
-              )}
-
-              {(viewMode === 'side-by-side' || viewMode === 'interleaved' || viewMode === 'translation-only') && (
-                <div className="translated-text markdown-body">
-                  {translation ? (
-                    <ReactMarkdown>{translation}</ReactMarkdown>
-                  ) : (
-                    <div className="translation-placeholder">
-                      <span className="scramble-loader">Translating...</span>
-                      {onRetry && (
-                        <button
-                          className="retry-btn"
-                          onClick={() => onRetry(chunk.id)}
-                          title="重试"
-                        >
-                          ↺
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {chunks.map((chunk) => (
+          <ParagraphItem
+            key={chunk.id}
+            chunk={chunk}
+            translation={translations[chunk.id]}
+            viewMode={viewMode}
+            onRetry={onRetry}
+            onObserve={onObserveParagraph}
+            onUnobserve={onUnobserveParagraph}
+          />
+        ))}
       </div>
 
       {/* Floating Control Capsule (Liquid Glass) */}
@@ -463,6 +500,27 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
         .icon-btn.active, .icon-btn.active-state {
             color: var(--color-accent-primary);
             background: rgba(0, 122, 255, 0.1);
+        }
+        
+        /* Ensure SVGs always render correctly inside buttons */
+        .icon-btn svg,
+        .pill-btn svg,
+        .action-btn-circle svg,
+        .expand-btn svg {
+            display: block;
+            flex-shrink: 0;
+            width: auto;
+            height: auto;
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: none;
+        }
+        
+        /* Prevent SVG from inheriting harmful text styles */
+        .control-capsule svg {
+            font-size: inherit;
+            line-height: 1;
+            overflow: visible;
         }
         
         .expand-btn {

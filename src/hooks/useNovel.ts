@@ -1,8 +1,9 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { FileParser } from '../services/parser';
 import { TextChunker, type TextChunk } from '../services/chunker';
 import { storage } from '../services/storage';
 import { aiService } from '../services/ai';
+import { TranslationEngine } from '../services/TranslationEngine';
 
 export interface NovelState {
     id: string;
@@ -18,7 +19,9 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [logs, setLogs] = useState<string[]>([]);
-    const [isPaused, setIsPaused] = useState(false);
+
+    // Translation engine instance
+    const engineRef = useRef<TranslationEngine | null>(null);
 
     const addLog = useCallback((message: string) => {
         setLogs(prev => [...prev, `[${new Date().toISOString().split('T')[1].split('.')[0]}] ${message}`]);
@@ -32,6 +35,13 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         }
     }, [apiKey, baseUrl, model, customSystemPrompt, debugMode, addLog]);
 
+    // Cleanup engine on unmount
+    useEffect(() => {
+        return () => {
+            engineRef.current?.destroy();
+        };
+    }, []);
+
     const loadNovel = useCallback(async (novelId: string) => {
         setIsLoading(true);
         addLog(`正在加载小说 ${novelId}...`);
@@ -40,11 +50,11 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
             if (project) {
                 setNovel({
                     id: project.novelId,
-                    title: "已加载小说", // We might want to store title in project or fetch from novel metdata
+                    title: "已加载小说",
                     chunks: project.chunks,
                     translations: project.translations,
                     progress: (Object.keys(project.translations).length / project.chunks.length) * 100,
-                    status: 'idle' // or completed
+                    status: 'idle'
                 });
                 addLog(`小说加载完成。进度：${Object.keys(project.translations).length}/${project.chunks.length}`);
             }
@@ -60,7 +70,7 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
     const processFile = useCallback(async (file: File) => {
         setIsLoading(true);
         setError(null);
-        setLogs([]); // Clear logs on new file
+        setLogs([]);
         addLog(`正在处理文件：${file.name}`);
         try {
             const text = await FileParser.readFile(file);
@@ -96,9 +106,90 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         }
     }, [addLog]);
 
+    // Initialize translation engine when novel changes
+    useEffect(() => {
+        if (!novel || !apiKey) return;
 
+        // Destroy previous engine
+        engineRef.current?.destroy();
 
-    const startTranslation = useCallback(async () => {
+        // Create new engine
+        const engine = new TranslationEngine();
+        engineRef.current = engine;
+
+        engine.initialize(
+            {
+                novelTitle: novel.title,
+                visibleObserverScreens: 0.8,
+                maxConcurrentRequests: 3,
+                maxBatchSize: 4,
+                maxBatchChars: 1500,
+            },
+            {
+                onTranslationComplete: (chunkId, translation) => {
+                    // Save to storage
+                    storage.saveTranslation(novel.id, chunkId, translation);
+
+                    // Update state
+                    setNovel(prev => {
+                        if (!prev) return null;
+                        const newTrans = { ...prev.translations, [chunkId]: translation };
+                        const progress = (Object.keys(newTrans).length / prev.chunks.length) * 100;
+
+                        // Check if completed
+                        const isCompleted = Object.keys(newTrans).length >= prev.chunks.length;
+
+                        return {
+                            ...prev,
+                            translations: newTrans,
+                            progress,
+                            status: isCompleted ? 'completed' : prev.status
+                        };
+                    });
+                },
+                onTranslationError: (chunkId, error) => {
+                    const chunk = novel.chunks.find(c => c.id === chunkId);
+                    const idx = chunk ? chunk.index + 1 : '?';
+                    addLog(`翻译切片 ${idx} 失败: ${error.message}`);
+                },
+                onStatusChange: (status) => {
+                    if (status === 'idle') {
+                        setNovel(prev => {
+                            if (!prev) return null;
+                            const isCompleted = Object.keys(prev.translations).length >= prev.chunks.length;
+                            return {
+                                ...prev,
+                                status: isCompleted ? 'completed' : 'idle'
+                            };
+                        });
+                    }
+                },
+                // Debug logging callbacks
+                onLog: (message) => {
+                    addLog(message);
+                },
+                onBatchStart: (startIndex, endIndex, count) => {
+                    // Could update UI with batch progress if needed
+                    console.debug(`Batch ${startIndex}-${endIndex} (${count} chunks) started`);
+                }
+            },
+            novel.chunks,
+            novel.translations
+        );
+
+        return () => {
+            engine.destroy();
+        };
+    }, [novel?.id, novel?.title, apiKey, addLog]);
+
+    // Sync translations to engine when they change externally
+    useEffect(() => {
+        if (novel && engineRef.current) {
+            engineRef.current.updateTranslations(novel.translations);
+        }
+    }, [novel?.translations]);
+
+    const startTranslation = useCallback(() => {
         if (!novel || !apiKey) {
             setError("未加载小说或缺少 API 密钥");
             addLog("启动失败：缺少小说或 API 密钥");
@@ -106,151 +197,26 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         }
 
         setNovel(prev => prev ? { ...prev, status: 'translating' } : null);
-        setIsPaused(false);
+        engineRef.current?.start();
         addLog("翻译已开始。");
     }, [novel, apiKey, addLog]);
 
-    // Translation Loop Logic
-    // STRICT SEQUENTIAL PRIORITY:
-    // We only fetch batch N if batch N-1 is done or we are at start.
-    // Actually, allowing some concurrency is fine, but we should prioritize lower indices.
-    // The current logic picks the FIRST untranslated chunk. This is correct for sequentiality.
-    // However, if we have holes (retry), it fills holes.
-    // We need to ensure we don't start too many "future" batches if technical limit is hit.
+    const pauseTranslation = useCallback(() => {
+        engineRef.current?.pause();
+        setNovel(prev => prev ? { ...prev, status: 'paused' } : null);
+        addLog("已暂停。");
+    }, [addLog]);
 
-    const MAX_CONCURRENT_REQUESTS = 3; // Reduced for stability
-    const MAX_BATCH_SIZE = 4;
-    const MAX_BATCH_CHARS = 1500;
+    const resumeTranslation = useCallback(() => {
+        engineRef.current?.resume();
+        setNovel(prev => prev ? { ...prev, status: 'translating' } : null);
+        addLog("正在恢复...");
+    }, [addLog]);
 
-    const pendingChunkIds = React.useRef<Set<string>>(new Set());
-    const activeRequests = React.useRef(0);
-
-    // Clear pending on reset
-    useEffect(() => {
-        pendingChunkIds.current.clear();
-        activeRequests.current = 0;
-    }, [novel?.id, isPaused, novel?.status]);
-
-    useEffect(() => {
-        let cancel = false;
-
-        const loop = async () => {
-            // If we are not translating, or paused, stop.
-            if (!novel || novel.status !== 'translating' || isPaused || cancel) return;
-
-            // Simple loop to fill slots
-            while (activeRequests.current < MAX_CONCURRENT_REQUESTS) {
-                // 1. Identify candidates
-                // We want the EARLIEST untranslated chunk that is NOT pending.
-                const allChunks = novel.chunks;
-                let startChunk = null;
-
-                for (const chunk of allChunks) {
-                    if (!novel.translations[chunk.id] && !pendingChunkIds.current.has(chunk.id)) {
-                        startChunk = chunk;
-                        break; // Found the earliest one
-                    }
-                }
-
-                if (!startChunk) {
-                    // No work found. Check if done.
-                    if (activeRequests.current === 0) {
-                        const trulyDone = novel.chunks.every(c => novel.translations[c.id]);
-                        if (trulyDone) {
-                            setNovel(prev => prev ? { ...prev, status: 'completed', progress: 100 } : null);
-                            addLog("Translation Completed!");
-                        }
-                    }
-                    break;
-                }
-
-                // 2. Build Batch
-                const batch = [startChunk];
-                let currentChars = startChunk.text.length;
-                let nextIndex = startChunk.index + 1;
-
-                while (batch.length < MAX_BATCH_SIZE) {
-                    if (nextIndex >= novel.chunks.length) break;
-                    const nextOne = novel.chunks[nextIndex];
-
-                    // Optimization: Only batch CONTINUOUS segments.
-                    // If nextOne is already translated or pending, we stop the batch here.
-                    // This ensures we strictly fill gaps.
-                    if (novel.translations[nextOne.id] || pendingChunkIds.current.has(nextOne.id)) break;
-
-                    if (currentChars + nextOne.text.length > MAX_BATCH_CHARS) break;
-
-                    batch.push(nextOne);
-                    currentChars += nextOne.text.length;
-                    nextIndex++;
-                }
-
-                // 3. Execute
-                batch.forEach(c => pendingChunkIds.current.add(c.id));
-                activeRequests.current++;
-
-                addLog(`Translating Batch: Segments ${batch[0].index + 1}-${batch[batch.length - 1].index + 1} (${batch.length} chunks)`);
-
-                aiService.translateBatch(
-                    batch.map(c => c.text),
-                    {
-                        previousParagraph: batch[0].index > 0 ? novel.chunks[batch[0].index - 1].text : undefined,
-                        nextParagraph: batch[batch.length - 1].index < novel.chunks.length - 1 ? novel.chunks[batch[batch.length - 1].index + 1].text : undefined,
-                        globalContext: `Title: ${novel.title}`
-                    }
-                ).then(translations => {
-                    if (cancel) return;
-
-                    const updates: Record<string, string> = {};
-                    batch.forEach((c, i) => {
-                        if (translations[i]) {
-                            updates[c.id] = translations[i];
-                            storage.saveTranslation(novel.id, c.id, translations[i]);
-                        }
-                    });
-
-                    setNovel(prev => {
-                        if (!prev) return null;
-                        const newTrans = { ...prev.translations, ...updates };
-                        return {
-                            ...prev,
-                            translations: newTrans,
-                            progress: (Object.keys(newTrans).length / prev.chunks.length) * 100
-                        };
-                    });
-
-                }).catch(err => {
-                    console.error("Batch failed", err);
-                    addLog(`Batch failed: Segments ${batch[0].index + 1}-${batch[batch.length - 1].index + 1}. Error: ${err}`);
-                    // We do NOT mark them as done. They remain untranslated.
-                    // The loop will pick them up again? 
-                    // To prevent infinite fast loops on permanent error, we might want to pause?
-                    // For now, let's just let the pending clear and it will retry in next loop tick.
-                }).finally(() => {
-                    if (!cancel) {
-                        batch.forEach(c => pendingChunkIds.current.delete(c.id));
-                        activeRequests.current--;
-                        // We rely on React state update (setNovel or logs?) to trigger re-render? 
-                        // Actually, if we just updated a Ref, it won't re-render.
-                        // setNovel triggers re-render.
-                        // If we failed, strict catch doesn't setNovel.
-                        // BUT, activeRequests changed. 
-                        // Check dependencies: is activeRequests.current in dep? No, it's a ref.
-                        // We need to trigger the effect again.
-                        // Hack: toggle a tick state? Or just setNovel(prev => ({...prev})) even on error?
-                        // Let's setNovel to force re-evaluation.
-                        setNovel(prev => prev ? { ...prev } : null);
-                    }
-                });
-            }
-        };
-
-        const timer = setInterval(loop, 1000); // Polling backup + initial trigger
-        loop(); // Immediate trigger
-
-        return () => { cancel = true; clearInterval(timer); };
-    }, [novel?.status, novel?.translations, isPaused, novel?.id, addLog, novel?.chunks, novel?.title]);
-    // Dependency on translations causes it to re-run after each success! Perfect loop.
+    const stopTranslation = useCallback(() => {
+        engineRef.current?.pause();
+        setNovel(prev => prev ? { ...prev, status: 'idle' } : null);
+    }, []);
 
     const exportNovel = useCallback((format: 'txt' | 'md' = 'txt') => {
         if (!novel) return;
@@ -267,7 +233,6 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
                 }
             });
         } else {
-            // TXT
             content = `${novel.title}\n\n`;
             novel.chunks.forEach(chunk => {
                 const translation = novel.translations[chunk.id];
@@ -285,44 +250,31 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         addLog(`已导出小说为 .${format}`);
     }, [novel, addLog]);
 
-    const retrySegment = useCallback(async (chunkId: string) => {
+    const retrySegment = useCallback((chunkId: string) => {
         if (!novel || !apiKey) return;
 
         const chunk = novel.chunks.find(c => c.id === chunkId);
         if (!chunk) return;
 
         addLog(`正在重试翻译切片 ${chunk.index + 1}...`);
-
-        try {
-            // Optimistic update or just wait? Let's just fire and forget, 
-            // but we might want to show loading state for this specific chunk if we had per-chunk status.
-            // For now, the UI just shows "Translating..." if missing.
-
-            const translation = await aiService.translateChunk(chunk.text, {
-                previousParagraph: chunk.index > 0 ? novel.chunks[chunk.index - 1].text : undefined,
-                nextParagraph: chunk.index < novel.chunks.length - 1 ? novel.chunks[chunk.index + 1].text : undefined,
-                globalContext: `Title: ${novel.title}`
-            });
-
-            if (translation) {
-                storage.saveTranslation(novel.id, chunk.id, translation);
-                setNovel(prev => {
-                    if (!prev) return null;
-                    return {
-                        ...prev,
-                        translations: {
-                            ...prev.translations,
-                            [chunk.id]: translation
-                        }
-                    };
-                });
-                addLog(`切片 ${chunk.index + 1} 重试成功。`);
-            }
-        } catch (e) {
-            console.error("Retry failed", e);
-            addLog(`切片 ${chunk.index + 1} 重试失败：${e}`);
-        }
+        engineRef.current?.retry(chunkId);
     }, [novel, apiKey, addLog]);
+
+    /**
+     * Register a paragraph element for observation
+     * Call this from ReadingView for each paragraph
+     */
+    const observeParagraph = useCallback((element: HTMLElement, chunkId: string, chunkIndex: number, text: string) => {
+        engineRef.current?.observe(element, chunkId, chunkIndex, text);
+    }, []);
+
+    /**
+     * Unobserve a paragraph element
+     * Call this from ReadingView cleanup
+     */
+    const unobserveParagraph = useCallback((element: HTMLElement) => {
+        engineRef.current?.unobserve(element);
+    }, []);
 
     return {
         novel,
@@ -332,10 +284,13 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         processFile,
         loadNovel,
         startTranslation,
-        pauseTranslation: () => { setIsPaused(true); setNovel(prev => prev ? { ...prev, status: 'paused' } : null); addLog("已暂停。"); },
-        resumeTranslation: () => { setIsPaused(false); setNovel(prev => prev ? { ...prev, status: 'translating' } : null); addLog("正在恢复..."); },
-        stopTranslation: () => setNovel(prev => prev ? { ...prev, status: 'idle' } : null),
+        pauseTranslation,
+        resumeTranslation,
+        stopTranslation,
         exportNovel,
-        retrySegment
+        retrySegment,
+        // New: paragraph observation for viewport-aware translation
+        observeParagraph,
+        unobserveParagraph
     };
 };
