@@ -26,6 +26,8 @@ export interface EngineConfig {
     novelTitle?: string;
     /** Auto-translate first N paragraphs on start (default: 10) */
     translateFirstN?: number;
+    /** Pre-translate N paragraphs ahead of viewport (default: 10) */
+    lookaheadCount?: number;
 }
 
 export interface TranslationCallbacks {
@@ -89,6 +91,7 @@ export class TranslationEngine {
             maxBatchChars: 1500,
             novelTitle: '',
             translateFirstN: 10,
+            lookaheadCount: 10,
         };
     }
 
@@ -302,7 +305,23 @@ export class TranslationEngine {
         const info = this.paragraphMap.get(chunkId);
         if (!info) return;
 
+        // Queue the visible paragraph
         this.addToQueue(chunkId, info.chunkIndex, 'normal');
+
+        // Pre-translate N paragraphs ahead (lookahead)
+        const lookahead = this.config.lookaheadCount;
+        const startIdx = info.chunkIndex + 1;
+        const endIdx = Math.min(startIdx + lookahead, this.allChunks.length);
+
+        for (let i = startIdx; i < endIdx; i++) {
+            const chunk = this.allChunks[i];
+            if (!chunk) continue;
+            if (this.completedIds.has(chunk.id)) continue;
+            if (this.pendingIds.has(chunk.id)) continue;
+
+            // Use addToQueueDirect to ensure we can queue without DOM element
+            this.addToQueueDirect(chunk.id, chunk.index, chunk.text, 'normal');
+        }
     }
 
     private addToQueue(chunkId: string, chunkIndex: number, priority: 'high' | 'normal'): void {
@@ -402,16 +421,19 @@ export class TranslationEngine {
         if (this.activeRequests >= this.config.maxConcurrentRequests) return;
         if (this.queue.length === 0) {
             if (this.activeRequests === 0 && this.status === 'translating') {
-                // Check if all observed paragraphs are done
-                const allDone = Array.from(this.paragraphMap.keys()).every(
-                    id => this.completedIds.has(id)
+                // Check if ALL chunks are done - not just observed paragraphs
+                // This prevents premature idle when only first N chunks were auto-queued
+                const allDone = this.allChunks.every(
+                    chunk => this.completedIds.has(chunk.id)
                 );
-                if (allDone && this.paragraphMap.size > 0) {
+                if (allDone && this.allChunks.length > 0) {
                     this.setStatus('idle');
                 }
+                // If not all done, status stays 'translating' - waiting for viewport to trigger more
             }
             return;
         }
+
 
         // Build a batch from queue
         const batch = this.buildBatch();
