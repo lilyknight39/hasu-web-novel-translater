@@ -10,7 +10,7 @@ function App() {
   // Persist API Key & Base URL & Debug Mode & Model & Prompt
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('openai_api_key') || '');
   const [baseUrl, setBaseUrl] = useState(() => localStorage.getItem('openai_base_url') || '');
-  const [model, setModel] = useState(() => localStorage.getItem('openai_model') || 'gpt-3.5-turbo');
+  const [model, setModel] = useState(() => localStorage.getItem('openai_model') || 'gpt-4o');
   const [customPrompt, setCustomPrompt] = useState(() => localStorage.getItem('openai_custom_prompt') || '');
   const [debugMode, setDebugMode] = useState(() => localStorage.getItem('debug_mode') === 'true');
   // Auto-detect theme preference
@@ -337,7 +337,7 @@ function App() {
 
         <div className="hero-section">
           <h2>莲之空传统鉴赏部</h2>
-          <p>AI 翻译阅读器 beta 1.0</p>
+          <p>AI 翻译阅读器 beta 1.2</p>
         </div>
 
         <FileUploader onFileSelect={processFile} isLoading={isLoading} />
