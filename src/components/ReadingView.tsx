@@ -130,6 +130,47 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
+  /* Safari scroll position preservation - CSS overflow-anchor not supported */
+  const scrollAnchorRef = useRef<{ element: Element | null; offsetFromTop: number }>({
+    element: null,
+    offsetFromTop: 0
+  });
+
+  // Before render: capture the currently visible element and its position
+  React.useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Find the first paragraph that's visible in the viewport
+    const paragraphs = container.querySelectorAll('.paragraph-pair');
+    for (const para of paragraphs) {
+      const rect = para.getBoundingClientRect();
+      // If this paragraph is partially or fully visible
+      if (rect.top < window.innerHeight && rect.bottom > 0) {
+        scrollAnchorRef.current = {
+          element: para,
+          offsetFromTop: rect.top
+        };
+        break;
+      }
+    }
+  }); // Run before every render
+
+  // After translation changes: restore scroll position
+  React.useLayoutEffect(() => {
+    const anchor = scrollAnchorRef.current;
+    if (!anchor.element) return;
+
+    // Get the new position of the anchor element
+    const newRect = anchor.element.getBoundingClientRect();
+    const drift = newRect.top - anchor.offsetFromTop;
+
+    // If the element has moved, adjust scroll to compensate
+    if (Math.abs(drift) > 1) {
+      window.scrollBy(0, drift);
+    }
+  }, [translations]); // Only when translations change
+
   /* Close appearances menu when clicking outside */
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
