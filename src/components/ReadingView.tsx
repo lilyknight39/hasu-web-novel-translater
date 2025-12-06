@@ -24,6 +24,8 @@ interface ReadingViewProps {
   onBack?: () => void;
   onObserveParagraph?: (element: HTMLElement, chunkId: string, chunkIndex: number, text: string) => void;
   onUnobserveParagraph?: (element: HTMLElement) => void;
+  onSaveReadingPosition?: (chunkIndex: number) => void;
+  initialReadingPosition?: number;
 }
 
 // ParagraphItem component handles observation lifecycle
@@ -93,7 +95,9 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
   onRetry,
   onBack,
   onObserveParagraph,
-  onUnobserveParagraph
+  onUnobserveParagraph,
+  onSaveReadingPosition,
+  initialReadingPosition = 0
 }) => {
   /* State for Appearance Popover & Collapse */
   const [showAppearance, setShowAppearance] = useState(false);
@@ -139,6 +143,66 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
     }
     return () => document.removeEventListener('click', handleClickOutside);
   }, [showAppearance]);
+
+  /* Reading position tracking - debounced save */
+  const lastSavedPositionRef = useRef<number>(-1);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    if (!onSaveReadingPosition) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Find the first visible paragraph
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const chunkId = entry.target.getAttribute('data-chunk-id');
+            const chunk = chunks.find(c => c.id === chunkId);
+            if (chunk && chunk.index !== lastSavedPositionRef.current) {
+              lastSavedPositionRef.current = chunk.index;
+
+              // Debounce: save at most every 2 seconds
+              if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current);
+              }
+              saveTimeoutRef.current = setTimeout(() => {
+                onSaveReadingPosition(chunk.index);
+              }, 2000);
+            }
+            break;
+          }
+        }
+      },
+      { root: null, rootMargin: '-20% 0px -60% 0px', threshold: 0.1 }
+    );
+
+    // Observe all paragraph pairs
+    const paragraphs = containerRef.current?.querySelectorAll('.paragraph-pair');
+    paragraphs?.forEach(p => observer.observe(p));
+
+    return () => {
+      observer.disconnect();
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [chunks, onSaveReadingPosition]);
+
+  /* Scroll to initial reading position on mount */
+  React.useEffect(() => {
+    if (initialReadingPosition > 0 && chunks.length > 0) {
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
+        const targetChunk = chunks[initialReadingPosition];
+        if (targetChunk) {
+          const element = containerRef.current?.querySelector(
+            `[data-chunk-id="${targetChunk.id}"]`
+          );
+          element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 300);
+    }
+  }, [initialReadingPosition, chunks]);
 
   return (
     <div className="reading-view" ref={containerRef}>

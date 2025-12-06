@@ -220,14 +220,46 @@ export class TranslationEngine {
         this.log('翻译已开始，等待段落进入视口...');
 
         // Debug: Log paragraphMap state to help diagnose timing issues
-        this.log(`当前已注册段落数：${this.paragraphMap.size}`);
+        this.log(`当前已注册段落数：${this.paragraphMap.size}，已完成翻译：${this.completedIds.size}`);
 
-        // Auto-enqueue first N paragraphs for immediate translation
-        // Use allChunks directly - don't require paragraphMap to be populated
+        // Find the first untranslated chunk
+        let firstUntranslatedIdx = -1;
+        for (let i = 0; i < this.allChunks.length; i++) {
+            if (!this.completedIds.has(this.allChunks[i].id)) {
+                firstUntranslatedIdx = i;
+                break;
+            }
+        }
+
+        // If all chunks are already translated, nothing to do
+        if (firstUntranslatedIdx === -1) {
+            this.log('所有段落已翻译完成。');
+            this.setStatus('idle');
+            return;
+        }
+
+        // Start from 10 chunks before the first untranslated (for context continuity)
+        // But re-translate those 10 to ensure smooth continuation
+        const resumeBacktrack = 10;
+        const startIdx = Math.max(0, firstUntranslatedIdx - resumeBacktrack);
+
+        // Remove the backtrack chunks from completedIds so they get re-translated
+        for (let i = startIdx; i < firstUntranslatedIdx; i++) {
+            const chunk = this.allChunks[i];
+            if (chunk) {
+                this.completedIds.delete(chunk.id);
+            }
+        }
+
+        if (startIdx > 0) {
+            this.log(`从第 ${startIdx + 1} 段开始翻译（回退 ${firstUntranslatedIdx - startIdx} 段以保持上下文连贯）`);
+        }
+
+        // Auto-enqueue N paragraphs starting from the calculated position
         const firstN = this.config.translateFirstN;
         let enqueued = 0;
-        for (const chunk of this.allChunks) {
-            if (enqueued >= firstN) break;
+        for (let i = startIdx; i < this.allChunks.length && enqueued < firstN; i++) {
+            const chunk = this.allChunks[i];
             if (this.completedIds.has(chunk.id)) continue;
 
             // Directly enqueue using chunk data - don't require paragraphMap lookup
@@ -236,7 +268,7 @@ export class TranslationEngine {
         }
 
         if (enqueued > 0) {
-            this.log(`已自动将前 ${enqueued} 个段落加入队列`);
+            this.log(`已自动将 ${enqueued} 个段落加入队列`);
         }
 
         // Immediately trigger queue processing

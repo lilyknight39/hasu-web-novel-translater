@@ -8,6 +8,7 @@ interface Novel {
     totalChunks: number;
     lastReadChunkIndex: number;
     createdAt: number;
+    lastReadAt?: number; // Timestamp of last reading session
 }
 
 interface TranslationProject {
@@ -91,6 +92,21 @@ export class StorageService {
             tx.objectStore('projects').delete(novelId),
             tx.done
         ]);
+    }
+
+    async getNovel(novelId: string): Promise<Novel | undefined> {
+        const db = await this.dbPromise;
+        return db.get('novels', novelId);
+    }
+
+    async saveReadingPosition(novelId: string, chunkIndex: number): Promise<void> {
+        const db = await this.dbPromise;
+        const novel = await db.get('novels', novelId);
+        if (!novel) return;
+
+        novel.lastReadChunkIndex = chunkIndex;
+        novel.lastReadAt = Date.now();
+        await db.put('novels', novel);
     }
 }
 

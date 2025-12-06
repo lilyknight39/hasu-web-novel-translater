@@ -12,6 +12,7 @@ export interface NovelState {
     translations: Record<string, string>;
     progress: number;
     status: 'idle' | 'parsing' | 'translating' | 'paused' | 'completed' | 'error';
+    lastReadChunkIndex?: number; // Resume reading position
 }
 
 export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = false, model?: string, customSystemPrompt?: string) => {
@@ -46,17 +47,22 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         setIsLoading(true);
         addLog(`正在加载小说 ${novelId}...`);
         try {
-            const project = await storage.getProject(novelId);
-            if (project) {
+            const [project, novelMeta] = await Promise.all([
+                storage.getProject(novelId),
+                storage.getNovel(novelId)
+            ]);
+            if (project && novelMeta) {
+                const translationCount = Object.keys(project.translations).length;
                 setNovel({
                     id: project.novelId,
-                    title: "已加载小说",
+                    title: novelMeta.title,
                     chunks: project.chunks,
                     translations: project.translations,
-                    progress: (Object.keys(project.translations).length / project.chunks.length) * 100,
-                    status: 'idle'
+                    progress: (translationCount / project.chunks.length) * 100,
+                    status: 'idle',
+                    lastReadChunkIndex: novelMeta.lastReadChunkIndex || 0
                 });
-                addLog(`小说加载完成。进度：${Object.keys(project.translations).length}/${project.chunks.length}`);
+                addLog(`小说加载完成。进度：${translationCount}/${project.chunks.length}，阅读位置：第 ${(novelMeta.lastReadChunkIndex || 0) + 1} 段`);
             }
         } catch (e) {
             setError("加载小说失败");
@@ -276,6 +282,16 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         engineRef.current?.unobserve(element);
     }, []);
 
+    /**
+     * Save reading position (which chunk the user is viewing)
+     * Call this from ReadingView when user scrolls
+     */
+    const saveReadingPosition = useCallback((chunkIndex: number) => {
+        if (!novel) return;
+        storage.saveReadingPosition(novel.id, chunkIndex);
+        setNovel(prev => prev ? { ...prev, lastReadChunkIndex: chunkIndex } : null);
+    }, [novel]);
+
     return {
         novel,
         isLoading,
@@ -291,6 +307,8 @@ export const useNovel = (apiKey: string, baseUrl?: string, debugMode: boolean = 
         retrySegment,
         // New: paragraph observation for viewport-aware translation
         observeParagraph,
-        unobserveParagraph
+        unobserveParagraph,
+        // New: reading position persistence
+        saveReadingPosition
     };
 };

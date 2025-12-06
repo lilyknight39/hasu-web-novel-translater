@@ -36,7 +36,8 @@ function App() {
     exportNovel,
     retrySegment,
     observeParagraph,
-    unobserveParagraph
+    unobserveParagraph,
+    saveReadingPosition
   } = useNovel(apiKey, baseUrl, debugMode, model, customPrompt);
 
   // Persist theme & font
@@ -306,6 +307,8 @@ function App() {
             onRetry={retrySegment}
             onObserveParagraph={observeParagraph}
             onUnobserveParagraph={unobserveParagraph}
+            onSaveReadingPosition={saveReadingPosition}
+            initialReadingPosition={novel.lastReadChunkIndex}
             onBack={() => {
               if (confirm('返回主页？')) {
                 window.location.reload();
@@ -337,7 +340,7 @@ function App() {
 
         <div className="hero-section">
           <h2>莲之空传统鉴赏部</h2>
-          <p>AI 翻译阅读器 beta 1.3</p>
+          <p>AI 翻译阅读器 beta 1.4</p>
         </div>
 
         <FileUploader onFileSelect={processFile} isLoading={isLoading} />
