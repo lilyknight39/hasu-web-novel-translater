@@ -90,8 +90,8 @@ export class TranslationEngine {
             maxBatchSize: 4,
             maxBatchChars: 1500,
             novelTitle: '',
-            translateFirstN: 10,
-            lookaheadCount: 10,
+            translateFirstN: 20,
+            lookaheadCount: 20,
         };
     }
 
