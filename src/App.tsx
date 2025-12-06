@@ -339,7 +339,7 @@ function App() {
 
         <div className="hero-section">
           <h2>莲之空传统鉴赏部</h2>
-          <p>AI 翻译阅读器 beta 1.6</p>
+          <p>AI 翻译阅读器 beta 1.7</p>
         </div>
 
         <FileUploader onFileSelect={processFile} isLoading={isLoading} />

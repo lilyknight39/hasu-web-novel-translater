@@ -890,6 +890,8 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
           max-width: 900px; /* Slightly wider for book mode */
           margin: 0 auto;
           padding: 4rem 2rem 8rem 2rem;
+          /* Enable scroll anchoring to prevent scroll jumps when content height changes */
+          overflow-anchor: auto;
         }
 
         .paragraph-pair {
@@ -965,6 +967,13 @@ export const ReadingView: React.FC<ReadingViewProps> = ({
             padding: 0.5rem 0.75rem;
             border-radius: 8px;
             width: fit-content;
+            /* Prevent this element from being used as scroll anchor */
+            overflow-anchor: none;
+        }
+        
+        /* Make translated text stable for scroll anchoring */
+        .translated-text {
+            overflow-anchor: auto;
         }
         
         .retry-btn {

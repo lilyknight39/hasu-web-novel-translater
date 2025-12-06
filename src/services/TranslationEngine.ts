@@ -238,27 +238,15 @@ export class TranslationEngine {
             return;
         }
 
-        // Start from 10 chunks before the first untranslated (for context continuity)
-        // But re-translate those 10 to ensure smooth continuation
-        const resumeBacktrack = 10;
-        const startIdx = Math.max(0, firstUntranslatedIdx - resumeBacktrack);
-
-        // Remove the backtrack chunks from completedIds so they get re-translated
-        for (let i = startIdx; i < firstUntranslatedIdx; i++) {
-            const chunk = this.allChunks[i];
-            if (chunk) {
-                this.completedIds.delete(chunk.id);
-            }
+        // Log the resume position if resuming from middle
+        if (firstUntranslatedIdx > 0) {
+            this.log(`从第 ${firstUntranslatedIdx + 1} 段继续翻译`);
         }
 
-        if (startIdx > 0) {
-            this.log(`从第 ${startIdx + 1} 段开始翻译（回退 ${firstUntranslatedIdx - startIdx} 段以保持上下文连贯）`);
-        }
-
-        // Auto-enqueue N paragraphs starting from the calculated position
+        // Auto-enqueue N paragraphs starting from the first untranslated position
         const firstN = this.config.translateFirstN;
         let enqueued = 0;
-        for (let i = startIdx; i < this.allChunks.length && enqueued < firstN; i++) {
+        for (let i = firstUntranslatedIdx; i < this.allChunks.length && enqueued < firstN; i++) {
             const chunk = this.allChunks[i];
             if (this.completedIds.has(chunk.id)) continue;
 
