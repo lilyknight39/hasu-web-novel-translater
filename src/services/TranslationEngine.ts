@@ -310,7 +310,9 @@ export class TranslationEngine {
             (entries) => {
                 for (const entry of entries) {
                     if (entry.isIntersecting) {
-                        const chunkId = this.elementToChunkId.get(entry.target as HTMLElement);
+                        // Get chunkId from DOM attribute - more reliable than WeakMap
+                        // WeakMap may not be populated if observe() wasn't called
+                        const chunkId = (entry.target as HTMLElement).getAttribute('data-chunk-id');
                         if (chunkId) {
                             this.onParagraphVisible(chunkId);
                         }
@@ -334,25 +336,26 @@ export class TranslationEngine {
         // Skip if already handled
         if (this.pendingIds.has(chunkId) || this.completedIds.has(chunkId)) return;
 
-        const info = this.paragraphMap.get(chunkId);
-        if (!info) return;
+        // Find chunk in allChunks - don't rely on paragraphMap being populated
+        const chunk = this.allChunks.find(c => c.id === chunkId);
+        if (!chunk) return;
 
-        // Queue the visible paragraph
-        this.addToQueue(chunkId, info.chunkIndex, 'normal');
+        // Queue the visible paragraph using direct method
+        this.addToQueueDirect(chunkId, chunk.index, chunk.text, 'normal');
 
         // Pre-translate N paragraphs ahead (lookahead)
         const lookahead = this.config.lookaheadCount;
-        const startIdx = info.chunkIndex + 1;
+        const startIdx = chunk.index + 1;
         const endIdx = Math.min(startIdx + lookahead, this.allChunks.length);
 
         for (let i = startIdx; i < endIdx; i++) {
-            const chunk = this.allChunks[i];
-            if (!chunk) continue;
-            if (this.completedIds.has(chunk.id)) continue;
-            if (this.pendingIds.has(chunk.id)) continue;
+            const nextChunk = this.allChunks[i];
+            if (!nextChunk) continue;
+            if (this.completedIds.has(nextChunk.id)) continue;
+            if (this.pendingIds.has(nextChunk.id)) continue;
 
             // Use addToQueueDirect to ensure we can queue without DOM element
-            this.addToQueueDirect(chunk.id, chunk.index, chunk.text, 'normal');
+            this.addToQueueDirect(nextChunk.id, nextChunk.index, nextChunk.text, 'normal');
         }
     }
 
@@ -513,11 +516,12 @@ export class TranslationEngine {
 
         // Start with first item (could be high priority)
         const first = this.queue[0];
-        const firstInfo = this.paragraphMap.get(first.chunkId);
-        if (!firstInfo) return [];
+        // Use allChunks lookup instead of paragraphMap - more reliable in production
+        const firstChunk = this.allChunks.find(c => c.id === first.chunkId);
+        if (!firstChunk) return [];
 
         batch.push(first);
-        totalChars += firstInfo.text.length;
+        totalChars += firstChunk.text.length;
 
         // Try to add consecutive items
         let nextIndex = first.chunkIndex + 1;
@@ -528,13 +532,14 @@ export class TranslationEngine {
             // Only batch consecutive paragraphs for context coherence
             if (item.chunkIndex !== nextIndex) break;
 
-            const info = this.paragraphMap.get(item.chunkId);
-            if (!info) break;
+            // Use allChunks lookup instead of paragraphMap
+            const chunk = this.allChunks.find(c => c.id === item.chunkId);
+            if (!chunk) break;
 
-            if (totalChars + info.text.length > this.config.maxBatchChars) break;
+            if (totalChars + chunk.text.length > this.config.maxBatchChars) break;
 
             batch.push(item);
-            totalChars += info.text.length;
+            totalChars += chunk.text.length;
             nextIndex++;
         }
 
@@ -542,9 +547,10 @@ export class TranslationEngine {
     }
 
     private async translateBatch(batch: QueueItem[]): Promise<void> {
+        // Use allChunks lookup instead of paragraphMap - more reliable in production
         const texts = batch.map(item => {
-            const info = this.paragraphMap.get(item.chunkId);
-            return info?.text || '';
+            const chunk = this.allChunks.find(c => c.id === item.chunkId);
+            return chunk?.text || '';
         }).filter(t => t.length > 0);
 
         if (texts.length === 0) return;
